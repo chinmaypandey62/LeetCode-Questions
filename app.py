@@ -40,9 +40,9 @@ def get_company_folders():
     return results.get("files", [])
 
 def get_csv_file(company_folder_id):
-    """Fetches the CSV file (all.csv) inside a company folder."""
+    """Fetches the CSV file (All.csv) inside a company folder."""
     service = get_drive_service()
-    query = f"'{company_folder_id}' in parents and name='all.csv'"
+    query = f"'{company_folder_id}' in parents and name='All.csv'"
     
     results = service.files().list(q=query, fields="files(id)").execute()
     file_id = results.get("files", [])[0]["id"] if results.get("files") else None
