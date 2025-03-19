@@ -1,78 +1,81 @@
 import os
 import json
-from flask import Flask, jsonify
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
+import pandas as pd
+from flask import Flask, jsonify, request
 from dotenv import load_dotenv
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
+# Set Google Application Credentials
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+# Initialize Flask app
 app = Flask(__name__)
 
-# Load credentials from environment variable
-service_account_info = json.loads(os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON"))
-credentials = service_account.Credentials.from_service_account_info(service_account_info)
+# Google Drive API setup
+SCOPES = ['https://www.googleapis.com/auth/drive']
+FOLDER_NAME = os.getenv("FOLDER_NAME")
 
-# Initialize Google Drive API
-drive_service = build("drive", "v3", credentials=credentials)
+def get_drive_service():
+    creds = Credentials.from_service_account_file(os.getenv("GOOGLE_APPLICATION_CREDENTIALS"), scopes=SCOPES)
+    return build('drive', 'v3', credentials=creds)
 
-# Function to get folder ID by name
-def get_folder_id(folder_name, parent_id=None):
-    query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder'"
-    if parent_id:
-        query += f" and '{parent_id}' in parents"
+def get_company_folders():
+    """Fetches all company folders from 'company_leetcode'."""
+    service = get_drive_service()
+    query = f"mimeType='application/vnd.google-apps.folder' and name='{FOLDER_NAME}'"
     
-    results = drive_service.files().list(q=query, fields="files(id, name)").execute()
-    folders = results.get("files", [])
-    return folders[0]["id"] if folders else None
+    results = service.files().list(q=query, fields="files(id)").execute()
+    folder_id = results.get("files", [])[0]["id"] if results.get("files") else None
 
-# Function to list company folders inside 'company_leetcode'
-def get_company_folders(parent_folder_id):
-    query = f"'{parent_folder_id}' in parents and mimeType='application/vnd.google-apps.folder'"
-    results = drive_service.files().list(q=query, fields="files(id, name)").execute()
+    if not folder_id:
+        return []
+
+    query = f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.folder'"
+    results = service.files().list(q=query, fields="files(id, name)").execute()
+    
     return results.get("files", [])
 
-# Function to get all.csv inside each company folder
-def get_csv_files(company_folders):
-    data = {}
+def get_csv_file(company_folder_id):
+    """Fetches the CSV file (all.csv) inside a company folder."""
+    service = get_drive_service()
+    query = f"'{company_folder_id}' in parents and name='all.csv'"
+    
+    results = service.files().list(q=query, fields="files(id)").execute()
+    file_id = results.get("files", [])[0]["id"] if results.get("files") else None
+    
+    if not file_id:
+        return None
+    
+    file = service.files().get_media(fileId=file_id).execute()
+    return pd.read_csv(pd.compat.StringIO(file.decode('utf-8')))
+
+@app.route('/get_questions', methods=['GET'])
+def get_questions():
+    """Fetches and returns all questions from the Google Drive folder."""
+    company_folders = get_company_folders()
+    data = []
+
     for folder in company_folders:
-        company_name = folder["name"]
-        folder_id = folder["id"]
-        query = f"'{folder_id}' in parents and name='all.csv' and mimeType='text/csv'"
-        result = drive_service.files().list(q=query, fields="files(id, name, webViewLink)").execute()
-        files = result.get("files", [])
-        if files:
-            data[company_name] = {
-                "file_id": files[0]["id"],
-                "file_name": files[0]["name"],
-                "link": files[0]["webViewLink"]
-            }
-    return data
+        folder_name = folder["name"]
+        csv_data = get_csv_file(folder["id"])
 
-@app.route("/")
+        if csv_data is not None:
+            csv_data["Company"] = folder_name  # Add company name to data
+            data.append(csv_data)
+
+    if not data:
+        return jsonify({"error": "No data found"}), 404
+
+    merged_data = pd.concat(data, ignore_index=True)
+    return merged_data.to_json(orient="records")
+
+@app.route('/')
 def home():
-    return "Google Drive API Connected Securely! 🔒"
+    return jsonify({"message": "LeetCode API is running!"})
 
-@app.route("/fetch_questions", methods=["GET"])
-def fetch_questions():
-    try:
-        # Get parent folder ID
-        parent_folder_id = get_folder_id("company_leetcode")
-        if not parent_folder_id:
-            return jsonify({"error": "Folder 'company_leetcode' not found"}), 404
-
-        # Get company folders
-        company_folders = get_company_folders(parent_folder_id)
-        if not company_folders:
-            return jsonify({"message": "No company folders found"}), 404
-
-        # Get CSV files
-        data = get_csv_files(company_folders)
-
-        return jsonify(data)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(debug=True)

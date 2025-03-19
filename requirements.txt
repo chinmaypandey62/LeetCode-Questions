@@ -1,7 +1,7 @@
-streamlit
+Flask
 pandas
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
-google-auth-transport
 google-api-python-client
+python-dotenv
