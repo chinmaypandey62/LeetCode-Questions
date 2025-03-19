@@ -55,7 +55,7 @@ def get_csv_file(company_folder_id):
 
 @app.route('/get_questions', methods=['GET'])
 def get_questions():
-    """Fetches and returns all questions from the Google Drive folder."""
+    """Fetches and returns questions from the Google Drive folder with filtering."""
     company_folders = get_company_folders()
     data = []
 
@@ -71,6 +71,27 @@ def get_questions():
         return jsonify({"error": "No data found"}), 404
 
     merged_data = pd.concat(data, ignore_index=True)
+
+    # 🔹 Apply filters based on query parameters
+    difficulty = request.args.get("difficulty")  # Easy, Medium, Hard
+    topic = request.args.get("topic")  # DP, Graph, Arrays, etc.
+    company = request.args.get("company")  # Google, Amazon, etc.
+    sort_by = request.args.get("sort_by")  # Frequency, Acceptance Rate
+
+    if difficulty:
+        merged_data = merged_data[merged_data["Difficulty"].str.lower() == difficulty.lower()]
+    
+    if topic:
+        merged_data = merged_data[merged_data["Topics"].str.contains(topic, case=False, na=False)]
+    
+    if company:
+        merged_data = merged_data[merged_data["Company"].str.lower() == company.lower()]
+
+    if sort_by == "Frequency":
+        merged_data = merged_data.sort_values(by="Frequency", ascending=False)
+    elif sort_by == "Acceptance Rate":
+        merged_data = merged_data.sort_values(by="Acceptance Rate", ascending=False)
+
     return merged_data.to_json(orient="records")
 
 @app.route('/')
