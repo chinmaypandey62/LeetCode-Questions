@@ -24,20 +24,16 @@ def get_drive_service():
     return build('drive', 'v3', credentials=creds)
 
 def get_company_folders():
-    """Fetches all company folders from 'company_leetcode'."""
     service = get_drive_service()
     query = f"mimeType='application/vnd.google-apps.folder' and name='{FOLDER_NAME}'"
     
-    results = service.files().list(q=query, fields="files(id)").execute()
-    folder_id = results.get("files", [])[0]["id"] if results.get("files") else None
-
-    if not folder_id:
-        return []
-
-    query = f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.folder'"
-    results = service.files().list(q=query, fields="files(id, name)").execute()
+    try:
+        results = service.files().list(q=query, fields="files(id, name)").execute()
+        print("API Response:", results)  # Debugging
+    except Exception as e:
+        print("Google API Error:", str(e))
     
-    return results.get("files", [])
+    return results.get("files", [])  # Might be an empty list
 
 def get_csv_file(company_folder_id):
     """Fetches the CSV file (All.csv) inside a company folder."""
